@@ -9,6 +9,73 @@ local log = require "chezmoi.log"
 
 local M = {}
 
+local apply_running = false
+local pending_applies = {}
+local queued_source_paths = {}
+
+local function run_next_apply()
+  local request = table.remove(pending_applies, 1)
+  if not request then
+    apply_running = false
+    return
+  end
+
+  queued_source_paths[request.source_path] = nil
+  apply_running = true
+
+  local args = {
+    "--source-path",
+    request.source_path,
+  }
+
+  if request.force then
+    table.insert(args, "--force")
+  end
+
+  apply.execute {
+    args = args,
+    async = true,
+    on_stderr = function(_, data)
+      notify.warn(data)
+    end,
+    on_exit = function(_, apply_exit_code)
+      if apply_exit_code == 0 then
+        local on_apply_conf = config.events.on_apply
+        local on_apply_func = function(_)
+          if on_apply_conf.notification.enable then
+            notify.info(on_apply_conf.notification.msg, on_apply_conf.notification.opts)
+          end
+        end
+
+        if on_apply_conf.override ~= nil and type(on_apply_conf.override) == "function" then
+          on_apply_func = on_apply_conf.override
+        end
+
+        on_apply_func(request.bufnr)
+      end
+
+      run_next_apply()
+    end,
+  }
+end
+
+local function queue_apply(source_path, bufnr, force)
+  if queued_source_paths[source_path] then
+    return
+  end
+
+  queued_source_paths[source_path] = true
+  table.insert(pending_applies, {
+    source_path = source_path,
+    bufnr = bufnr,
+    force = force,
+  })
+
+  if not apply_running then
+    run_next_apply()
+  end
+end
+
 ---@param args string[]
 ---@return table { watch: boolean, force: boolean }
 function M.__parse_custom_opts(args)
@@ -98,42 +165,7 @@ function M.watch(bufnr, force)
     group = augroup,
     buffer = bufnr,
     callback = function()
-      local args = {
-        "--source-path",
-        source_path,
-      }
-
-      if force then
-        table.insert(args, "--force")
-      end
-
-      apply.execute {
-        args = args,
-        on_stderr = function(_, data)
-          notify.warn(data)
-        end,
-        on_exit = function(_, apply_exit_code)
-          if apply_exit_code ~= 0 then
-            return
-          end
-
-          local on_apply_conf = config.events.on_apply
-          local on_apply_func = function(_)
-            if on_apply_conf.notification.enable then
-              notify.info(on_apply_conf.notification.msg, on_apply_conf.notification.opts)
-            end
-          end
-
-          if
-            on_apply_conf.override ~= nil
-            and type(on_apply_conf.override) == "function"
-          then
-            on_apply_func = on_apply_conf.override
-          end
-
-          on_apply_func(bufnr)
-        end,
-      }
+      queue_apply(source_path, bufnr, force)
     end,
   })
 end

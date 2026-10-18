@@ -79,6 +79,20 @@ Edit your chezmoi-managed files and automatically apply.
 
 The `ignore_patterns` option accepts Lua patterns to match against filenames. Files matching these patterns will not trigger automatic `chezmoi apply` when saved, even if watch mode is enabled.
 
+### Automatic Git Commit and Push
+
+chezmoi can commit and push source-state changes after each successful apply. Set this in your chezmoi configuration:
+
+```toml
+[git]
+autoCommit = true
+autoPush = true
+```
+
+With `watch` enabled, this plugin starts `chezmoi apply` in the background. Neovim does not wait for a commit or push when you save. The plugin runs one apply at a time. If you save during an apply, it runs one more apply after that command ends.
+
+Automatic push sends the source state to its Git remote. Add secret files with `chezmoi add --encrypt`, and check the source state before you enable automatic push. For encrypted files, use `chezmoi edit`. This plugin opens chezmoi source paths and does not use chezmoi's decrypt-and-re-encrypt edit flow.
+
 ### Automatically Running `chezmoi apply` In Specific Directories
 The below configuration wll allow you to automatically apply changes on files under chezmoi source path.
 ```lua

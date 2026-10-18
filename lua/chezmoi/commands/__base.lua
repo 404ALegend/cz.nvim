@@ -10,6 +10,7 @@ local M = {}
 ---@field cmd? string
 ---@field targets? any
 ---@field args? string[]
+---@field async? boolean
 ---@field on_exit? fun(code: number, signal: number)
 ---@field on_stderr? fun(error: string, data: string)
 
@@ -44,6 +45,11 @@ function M.execute(opts)
     on_stderr = opts.on_stderr or on_stderr_default,
     on_exit = opts.on_exit,
   }
+
+  if opts.async then
+    job:start()
+    return job
+  end
 
   job:sync()
 
