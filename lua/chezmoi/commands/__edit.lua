@@ -13,7 +13,40 @@ local apply_running = false
 local pending_applies = {}
 local queued_source_paths = {}
 
-local function run_next_apply()
+local function command_error(request, step, exit_code, stderr)
+  local details = table.concat(stderr):gsub("%s+$", "")
+  if details == "" then
+    details = "no error output"
+  end
+  notify.error(string.format("chezmoi %s failed for %s (exit %d): %s", step, request.source_path, exit_code, details))
+end
+
+local run_next_apply
+
+local function run_command(request, step, cmd, args, on_success)
+  local stderr = {}
+  base.execute {
+    cmd = cmd,
+    args = args,
+    global_args = request.global_args,
+    async = true,
+    on_stderr = function(_, data)
+      if data and data ~= "" then
+        table.insert(stderr, data)
+      end
+    end,
+    on_exit = function(_, exit_code)
+      if exit_code == 0 then
+        on_success()
+      else
+        command_error(request, step, exit_code, stderr)
+        run_next_apply()
+      end
+    end,
+  }
+end
+
+run_next_apply = function()
   local request = table.remove(pending_applies, 1)
   if not request then
     apply_running = false
@@ -23,43 +56,27 @@ local function run_next_apply()
   queued_source_paths[request.source_path] = nil
   apply_running = true
 
-  local args = {
-    "--source-path",
-    request.source_path,
-  }
-
+  local apply_args = { "--source-path", request.source_path }
   if request.force then
-    table.insert(args, "--force")
+    table.insert(apply_args, "--force")
   end
 
-  apply.execute {
-    args = args,
-    async = true,
-    on_stderr = function(_, data)
-      notify.warn(data)
-    end,
-    on_exit = function(_, apply_exit_code)
-      if apply_exit_code == 0 then
-        local on_apply_conf = config.events.on_apply
-        local on_apply_func = function(_)
+  run_command(request, "apply", "apply", apply_args, function()
+    run_command(request, "git add", "git", { "--", "add", "--", request.source_path }, function()
+      run_command(request, "git commit", "git", { "--", "commit", "-m", "Update chezmoi source", "--", request.source_path }, function()
+        run_command(request, "git push", "git", { "--", "push" }, function()
+          local on_apply_conf = config.events.on_apply
           if on_apply_conf.notification.enable then
             notify.info(on_apply_conf.notification.msg, on_apply_conf.notification.opts)
           end
-        end
-
-        if on_apply_conf.override ~= nil and type(on_apply_conf.override) == "function" then
-          on_apply_func = on_apply_conf.override
-        end
-
-        on_apply_func(request.bufnr)
-      end
-
-      run_next_apply()
-    end,
-  }
+          run_next_apply()
+        end)
+      end)
+    end)
+  end)
 end
 
-local function queue_apply(source_path, bufnr, force)
+local function queue_apply(source_path, bufnr, opts)
   if queued_source_paths[source_path] then
     return
   end
@@ -68,7 +85,8 @@ local function queue_apply(source_path, bufnr, force)
   table.insert(pending_applies, {
     source_path = source_path,
     bufnr = bufnr,
-    force = force,
+    force = opts.force,
+    global_args = opts.global_args,
   })
 
   if not apply_running then
@@ -100,11 +118,16 @@ function M.__parse_custom_opts(args)
 end
 
 ---@param bufnr number?
----@param force boolean?
-function M.watch(bufnr, force)
+---@param opts? { force?: boolean, global_args?: string[] }
+function M.watch(bufnr, opts)
   -- Use autocmd to make it work as if 'watch' option is given
   bufnr = bufnr or vim.api.nvim_get_current_buf()
-  force = force or config.edit.force
+  if type(opts) == "boolean" then
+    opts = { force = opts }
+  end
+  opts = opts or {}
+  opts.force = opts.force or config.edit.force
+  opts.global_args = opts.global_args or {}
 
   local source_path = vim.api.nvim_buf_get_name(bufnr)
   local should_ignore = util.str_matches_any_of(
@@ -118,17 +141,15 @@ function M.watch(bufnr, force)
 
   local status_err = nil
   status.execute {
-    args = {
-      "--source-path",
-      source_path,
-    },
+    args = { "--source-path", source_path },
+    global_args = opts.global_args,
     on_stderr = function(_, data)
       status_err = data
     end,
   }
 
   if status_err then
-    log.warn(status_err)
+    notify.error("chezmoi status failed for " .. source_path .. ": " .. status_err)
     return
   end
 
@@ -165,7 +186,7 @@ function M.watch(bufnr, force)
     group = augroup,
     buffer = bufnr,
     callback = function()
-      queue_apply(source_path, bufnr, force)
+      queue_apply(source_path, bufnr, opts)
     end,
   })
 end

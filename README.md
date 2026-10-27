@@ -81,20 +81,21 @@ The `ignore_patterns` option accepts Lua patterns to match against filenames. Fi
 
 ### Automatic Git Commit and Push
 
-chezmoi can commit and push source-state changes after each successful apply. Set this in your chezmoi configuration:
+ChezMoi uses these settings after source-changing ChezMoi commands. A watched source-file save uses `chezmoi apply` and then supported `chezmoi git` commands:
 
 ```toml
 [git]
+autoAdd = true
 autoCommit = true
 autoPush = true
 ```
 
-With `watch` enabled, this plugin starts `chezmoi apply` in the background. Neovim does not wait for a commit or push when you save. The plugin runs one apply at a time. If you save during an apply, it runs one more apply after that command ends.
+With `watch` enabled, this plugin applies the source path and then runs `chezmoi git add`, `commit`, and `push`. Neovim does not wait when you save. The plugin runs one workflow at a time. A failed step shows a Neovim error and stops later steps.
 
 Automatic push sends the source state to its Git remote. Add secret files with `chezmoi add --encrypt`, and check the source state before you enable automatic push. For encrypted files, use `chezmoi edit`. This plugin opens chezmoi source paths and does not use chezmoi's decrypt-and-re-encrypt edit flow.
 
 ### Automatically Running `chezmoi apply` In Specific Directories
-The below configuration wll allow you to automatically apply changes on files under chezmoi source path.
+The configuration below watches files under a ChezMoi source path. The optional `global_args` use that source and configuration for `status`, `apply`, and `git`. Add `--persistent-state` for a separate source state database.
 ```lua
 --  e.g. ~/.local/share/chezmoi/*
 vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
@@ -102,7 +103,9 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
     callback = function(ev)
         local bufnr = ev.buf
         local edit_watch = function()
-            require("chezmoi.commands.__edit").watch(bufnr)
+            require("chezmoi.commands.__edit").watch(bufnr, {
+                global_args = { "-S", source_dir, "-c", config_file },
+            })
         end
         vim.schedule(edit_watch)
     end,
