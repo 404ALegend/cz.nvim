@@ -84,7 +84,7 @@ The default ChezMoi source remains available without configuration. The optional
 
 `path` is required. It is the ChezMoi source root. The plugin adds `--source <path>` to commands for that source. Use `global_args` for extra global ChezMoi options, such as `--persistent-state`.
 
-`snacks` combines the default source and all configured sources when no source names are given. Pass source names as its third argument to create a picker for selected sources.
+`snacks` combines the default source and all configured sources when no source names are given. Pass source names as its third argument to create a picker for selected sources. The plugin watches files below each configured source root after `setup()` runs.
 
 ```lua
 require("chezmoi").setup({

@@ -16,6 +16,9 @@ describe("chezmoi sources", function()
     assert.are.equal("default", sources[1].name)
     assert.are.equal("personal", sources[2].name)
     assert.are.equal(vim.fn.expand("~/personal-chezmoi"), sources[2].path)
+    local autocmds = vim.api.nvim_get_autocmds({ event = "BufReadPost", group = "chezmoi_sources" })
+    assert.are.equal(1, #autocmds)
+    assert.are.equal(vim.fn.expand("~/personal-chezmoi") .. "/**", autocmds[1].pattern)
     assert.are.same({
       "--source",
       vim.fn.expand("~/personal-chezmoi"),

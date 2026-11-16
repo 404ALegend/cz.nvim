@@ -163,7 +163,6 @@ describe("commands.__edit.watch sources", function()
     vim.cmd.edit(source_path)
     local bufnr = vim.api.nvim_get_current_buf()
     local actual_source_path = vim.api.nvim_buf_get_name(bufnr)
-    edit_cmd.watch(bufnr, { source = "personal" })
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "second" })
     vim.cmd.write()
 
