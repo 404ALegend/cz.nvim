@@ -132,3 +132,64 @@ describe("commands.__edit.watch", function()
     vim.fn.delete(temp_dir, "rf")
   end)
 end)
+
+describe("commands.__edit.watch sources", function()
+  it("uses the configured source for status and apply", function()
+    local temp_dir = vim.fn.tempname()
+    local bin_dir = temp_dir .. "/bin"
+    local chezmoi_path = bin_dir .. "/chezmoi"
+    local source_root = temp_dir .. "/personal"
+    local source_path = source_root .. "/dot_file"
+    local log_path = temp_dir .. "/commands.log"
+    local previous_path = vim.env.PATH
+    local previous_log_path = vim.env.CHEZMOI_NVIM_SMOKE_LOG
+
+    vim.fn.mkdir(bin_dir, "p")
+    vim.fn.mkdir(source_root, "p")
+    vim.fn.writefile({
+      "#!/bin/sh",
+      "echo \"$*\" >> \"$CHEZMOI_NVIM_SMOKE_LOG\"",
+    }, chezmoi_path)
+    vim.fn.setfperm(chezmoi_path, "rwxr-xr-x")
+    vim.fn.writefile({ "first" }, source_path)
+    vim.env.PATH = bin_dir .. ":" .. previous_path
+    vim.env.CHEZMOI_NVIM_SMOKE_LOG = log_path
+
+    require("chezmoi").setup({
+      sources = {
+        personal = { path = source_root },
+      },
+    })
+    vim.cmd.edit(source_path)
+    local bufnr = vim.api.nvim_get_current_buf()
+    local actual_source_path = vim.api.nvim_buf_get_name(bufnr)
+    edit_cmd.watch(bufnr, { source = "personal" })
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "second" })
+    vim.cmd.write()
+
+    local source_prefix = "--source " .. source_root
+    local source_lines = function()
+      if vim.fn.filereadable(log_path) == 0 then
+        return {}
+      end
+      return vim.tbl_filter(function(line)
+        return vim.startswith(line, source_prefix)
+      end, vim.fn.readfile(log_path))
+    end
+    assert.is_true(vim.wait(1000, function()
+      return #source_lines() == 5
+    end))
+    assert.are.same({
+      "--source " .. source_root .. " status --source-path " .. actual_source_path,
+      "--source " .. source_root .. " apply --source-path " .. actual_source_path,
+      "--source " .. source_root .. " git -- add -- " .. actual_source_path,
+      "--source " .. source_root .. " git -- commit -m Update chezmoi source -- " .. actual_source_path,
+      "--source " .. source_root .. " git -- push",
+    }, source_lines())
+
+    vim.api.nvim_clear_autocmds { group = "chezmoi", buffer = bufnr }
+    vim.env.PATH = previous_path
+    vim.env.CHEZMOI_NVIM_SMOKE_LOG = previous_log_path
+    vim.fn.delete(temp_dir, "rf")
+  end)
+end)

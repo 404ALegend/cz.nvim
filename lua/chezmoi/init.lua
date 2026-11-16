@@ -2,6 +2,7 @@ local chezmoi = {}
 
 local default_config = {
   extra_args = {},
+  sources = {},
   edit = {
     watch = false,
     force = false,

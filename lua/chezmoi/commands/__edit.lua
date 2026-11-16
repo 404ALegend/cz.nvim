@@ -53,7 +53,7 @@ run_next_apply = function()
     return
   end
 
-  queued_source_paths[request.source_path] = nil
+  queued_source_paths[request.queue_key] = nil
   apply_running = true
 
   local apply_args = { "--source-path", request.source_path }
@@ -77,16 +77,18 @@ run_next_apply = function()
 end
 
 local function queue_apply(source_path, bufnr, opts)
-  if queued_source_paths[source_path] then
+  local queue_key = table.concat(opts.global_args, "\0") .. "\0" .. source_path
+  if queued_source_paths[queue_key] then
     return
   end
 
-  queued_source_paths[source_path] = true
+  queued_source_paths[queue_key] = true
   table.insert(pending_applies, {
     source_path = source_path,
     bufnr = bufnr,
     force = opts.force,
     global_args = opts.global_args,
+    queue_key = queue_key,
   })
 
   if not apply_running then
@@ -118,7 +120,7 @@ function M.__parse_custom_opts(args)
 end
 
 ---@param bufnr number?
----@param opts? { force?: boolean, global_args?: string[] }
+---@param opts? { force?: boolean, global_args?: string[], source?: string }
 function M.watch(bufnr, opts)
   -- Use autocmd to make it work as if 'watch' option is given
   bufnr = bufnr or vim.api.nvim_get_current_buf()
@@ -127,7 +129,11 @@ function M.watch(bufnr, opts)
   end
   opts = opts or {}
   opts.force = opts.force or config.edit.force
-  opts.global_args = opts.global_args or {}
+  if opts.source ~= nil then
+    opts.global_args = require("chezmoi.source").get(opts.source).global_args
+  else
+    opts.global_args = opts.global_args or {}
+  end
 
   local source_path = vim.api.nvim_buf_get_name(bufnr)
   local should_ignore = util.str_matches_any_of(
@@ -191,7 +197,7 @@ function M.watch(bufnr, opts)
   })
 end
 
----@param opts { targets?: any, args: string[]? }
+---@param opts { targets?: any, args: string[]?, global_args?: string[] }
 function M.execute(opts)
   opts = opts or {}
   opts.targets = vim.iter({ opts.targets or {} }):flatten():totable()
@@ -207,6 +213,7 @@ function M.execute(opts)
     local source_path_res = base.execute {
       cmd = "source-path",
       targets = { tostring(path) },
+      global_args = opts.global_args or {},
       on_stderr = function() end,
     }
 
@@ -238,7 +245,10 @@ function M.execute(opts)
 
     if custom_opts.watch then
       local bufnr = vim.api.nvim_get_current_buf()
-      M.watch(bufnr, custom_opts.force)
+      M.watch(bufnr, {
+        force = custom_opts.force,
+        global_args = opts.global_args or {},
+      })
     end
   end
 end

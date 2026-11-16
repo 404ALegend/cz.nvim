@@ -79,6 +79,33 @@ Edit your chezmoi-managed files and automatically apply.
 
 The `ignore_patterns` option accepts Lua patterns to match against filenames. Files matching these patterns will not trigger automatic `chezmoi apply` when saved, even if watch mode is enabled.
 
+### Additional Sources
+The default ChezMoi source remains available without configuration. The optional `sources` map adds named sources. Each map key identifies that source in picker calls and key bindings.
+
+`path` is required. It is the ChezMoi source root. The plugin adds `--source <path>` to commands for that source. Use `global_args` for extra global ChezMoi options, such as `--persistent-state`.
+
+`snacks` combines the default source and all configured sources when no source names are given. Pass source names as its third argument to create a picker for selected sources.
+
+```lua
+require("chezmoi").setup({
+  sources = {
+    personal = {
+      path = "~/.local/share/chezmoi-personal",
+      global_args = { "--persistent-state", vim.fn.expand("~/.cache/chezmoi-personal.db") },
+    },
+  },
+})
+
+vim.keymap.set("n", "<leader>cz", function()
+  require("chezmoi.pick").snacks()
+end)
+
+vim.keymap.set("n", "<leader>cP", function()
+  require("chezmoi.pick").snacks(nil, nil, { "personal" })
+end)
+```
+
+The binding selects the source name from `sources`. In this example, `personal` is both the map key and the name in the source list.
 ### Automatic Git Commit and Push
 
 ChezMoi uses these settings after source-changing ChezMoi commands. A watched source-file save uses `chezmoi apply` and then supported `chezmoi git` commands:
@@ -136,10 +163,11 @@ vim.api.nvim_create_autocmd({ "BufRead", "BufNewFile" }, {
 `chezmoi.nvim` provides wrappers for the most common picker plugins, namely [telescope.nvim](https://github.com/nvim-telescope/telescope.nvim), [mini.pick](https://github.com/nvim-mini/mini.nvim/blob/main/readmes/mini-pick.md),  [snacks.picker](https://github.com/folke/snacks.nvim/blob/main/docs/picker.md), and [fzf-lua](https://github.com/ibhagwan/fzf-lua).
 
 They are all accessible through `require("chezmoi.pick")`. This module contains four functions: `snacks`, `fzf`, `mini` and `telescope`.
-They all share the same signature with two arguments:
+They share two arguments. The `snacks` picker accepts a third `source_names` argument for configured sources:
 
 - `targets`: the path(s) to search with chezmoi
-- `args`: the command line arguments to give the `chezmoi managed` command. These should be passed as a table, see the example below
+- `args`: the command line arguments to give the `chezmoi managed` command.
+- `source_names`: optional names from `setup().sources`. This argument is available for `snacks`.
 
 Here is an example with `telescope`. You could replace telescope with any of the pickers mentioned above.
 

@@ -6,7 +6,8 @@ local M = {}
 -- Under Apache 2.0 License (https://github.com/LazyVim/LazyVim/blob/main/LICENSE)
 ---@param targets? string|string[] Optional target files or patterns
 ---@param args? string[] Optional command arguments
-function M.snacks(targets, args)
+---@param source_names? string[] Source names from setup().sources
+function M.snacks(targets, args, source_names)
   local default_args = {
     "--path-style",
     "absolute",
@@ -16,17 +17,20 @@ function M.snacks(targets, args)
     "externals",
   }
   args = args or default_args
-  local results = require("chezmoi.commands").list {
-    targets = targets,
-    args = args,
-  }
   local items = {}
-
-  for _, czFile in ipairs(results) do
-    table.insert(items, {
-      text = czFile,
-      file = czFile,
-    })
+  for _, source in ipairs(require("chezmoi.source").all(source_names)) do
+    local results = require("chezmoi.commands").list {
+      targets = targets,
+      args = args,
+      global_args = source.global_args,
+    }
+    for _, cz_file in ipairs(results) do
+      table.insert(items, {
+        text = cz_file,
+        file = cz_file,
+        source = source,
+      })
+    end
   end
 
   ---@type snacks.picker.Config
@@ -37,6 +41,7 @@ function M.snacks(targets, args)
       require("chezmoi.commands").edit {
         targets = { item.text },
         args = { "--watch" },
+        global_args = item.source.global_args,
       }
     end,
   }
